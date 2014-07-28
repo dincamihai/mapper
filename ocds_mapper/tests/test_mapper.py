@@ -134,4 +134,3 @@ def test_traverse_process_list():
     schema = [{"name": "constant:foo"}]
     csv_row = {}
     assert ocds_mapper.mapper.traverse(schema, csv_row) == [{"name": "foo"}]
-

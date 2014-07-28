@@ -1,16 +1,19 @@
 {
     "publisher": {
-        "name": null
+        "name": "{name}"
     },
     "publishingMeta": {
-        "date": null
+        "date": "{date}"
     },
     "releases": [
-        {
-            "releaseMeta": {
-                "ocid": "reference_number",
-                "locale": "constant:en_us"
-            }
-        }
+        {.repeated section csv_rows}
+            {.meta-left}
+                "releaseMeta": {
+                    "ocid": "{reference_number}",
+                    "locale": "en_us",
+                    "releaseID": "{releaseID}"
+                }
+            {.meta-right}{.alternates with},
+        {.end}
     ]
 }

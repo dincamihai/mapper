@@ -7,6 +7,7 @@ import json
 import urllib2
 import urlparse
 import uuid
+import jsontemplate
 
 
 def is_url(file_path_or_url):
@@ -23,187 +24,26 @@ def open_file_path_or_url(file_path_or_url):
             yield f
 
 
-def get_csv_data(csv_row, key, index=None):
-    if index is not None:
-        key = key.replace('#', str(index))
-    try:
-        return csv_row[key].decode('utf-8')
-    except KeyError as error:
-        raise KeyError(
-            'Mapping uses invalid CSV header "{}"'.format(error.message))
-
-
-def decompose_schema(schema, csv_row, index=None, list_value=None):
-    result = schema.split(':', 1)  # split at most once, i.e. only first colon
-    if len(result) == 1:
-        return get_csv_data(csv_row, schema, index)
-
-    column_type, value = result
-    if 'string' == column_type:
-        return get_csv_data(csv_row, value, index)
-    elif 'constant' == column_type:
-        return value
-    elif 'integer' == column_type:
-        try:
-            return int(get_csv_data(csv_row, value, index))
-        except ValueError:
-            raise ValueError(
-                '"{}" is not an integer. Maybe mapping "{}" is invalid.'
-                .format(get_csv_data(csv_row, value, index), schema))
-    elif 'number' == column_type:
-        try:
-            return float(get_csv_data(csv_row, value, index))
-        except ValueError:
-            raise ValueError(
-                '"{}" is not a float. Maybe mapping "{}" is invalid.'
-                .format(get_csv_data(csv_row, value, index), schema))
-    elif 'boolean' == column_type:
-        return get_csv_data(csv_row, value, index).lower() in [
-            '1', 't', 'true', 'yes']
-    elif 'list' == column_type:
-        if list_value is not None:
-            return list_value
-        return map(
-            lambda it: it.strip(),
-            get_csv_data(csv_row, value, index).split(','))
-
-    raise ValueError('Invalid column type "{}:" -- valid column types are: '
-                     'string, constant, integer, boolean.'.format(column_type))
-
-
-def csv_row_has_key(schema, csv_row):
-    try:
-        decompose_schema(schema, csv_row)
-    except:
-        return False
-    return True
-
-
-def get_index_pattern(schema):
-    if isinstance(schema, (str, unicode)):
-        if '#' in schema:
-            return schema
-        else:
-            return None
-    elif isinstance(schema, (dict, list)):
-        if isinstance(schema, dict):
-            schema = schema.values()
-        for value in schema:
-            result = get_index_pattern(value)
-            if result is not None:
-                return result
-    else:
-        return None
-
-
-def get_list_tag(schema):
-    if isinstance(schema, (str, unicode)):
-        if schema.startswith('list:'):
-            return schema
-    elif isinstance(schema, dict):
-        for key, value in schema.items():
-            result = get_list_tag(value)
-            if result is not None:
-                return result
-    else:
-        return None
-
-
-def traverse_str(schema, csv_row, index, list_value):
-    if schema:
-        return decompose_schema(schema, csv_row, index, list_value)
-    else:
-        return schema
-
-
-def traverse_dict(schema, csv_row, index, list_value):
-    result = {}
-    for key, value in schema.items():
-        result[key] = traverse(value, csv_row, index, list_value)
-    return result
-
-
-def get_start_index(index_pattern, csv_row):
-    if csv_row_has_key(index_pattern.replace('#', str(0)), csv_row):
-        return 0
-    if csv_row_has_key(index_pattern.replace('#', str(1)), csv_row):
-        return 1
-
-    raise ValueError(
-        'Did not found columns for indexed key "{}", '
-        'i.e. neither "{}" nor "{}" was a valid column.'
-        .format(
-            index_pattern,
-            index_pattern.replace('#', '0'),
-            index_pattern.replace('#', '1')
-        )
-    )
-
-
-def create_list_of_indexed_objects(index_pattern, csv_row, schema, list_value):
-    i = get_start_index(index_pattern, csv_row)
-
-    result = []
-    while csv_row_has_key(index_pattern.replace('#', str(i)), csv_row):
-        for value in schema:
-            result.append(
-                traverse(value, csv_row, i, list_value)
-            )
-        i += 1
-    return result
-
-
-def traverse_list(schema, csv_row, index, list_value):
-    # this happens eg when bidder_#_name is in subschema
-    index_pattern = get_index_pattern(schema)
-    if index_pattern is not None:
-        return create_list_of_indexed_objects(
-            index_pattern, csv_row, schema, list_value
-        )
-
-    result = []
-    for subschema in schema:
-        list_tag = get_list_tag(subschema)
-        if list_tag is not None:
-            list_values = decompose_schema(list_tag, csv_row, index)
-            for list_value in list_values:
-                result.append(traverse(subschema, csv_row, index, list_value))
-        else:
-            result.append(traverse(subschema, csv_row, index, list_value))
-    return result
-
-
-def traverse(schema, csv_row, index=None, list_value=None):
-    if isinstance(schema, (str, unicode)):
-        return traverse_str(schema, csv_row, index, list_value)
-    elif isinstance(schema, dict):
-        return traverse_dict(schema, csv_row, index, list_value)
-    elif isinstance(schema, list):
-        return traverse_list(schema, csv_row, index, list_value)
-    else:
-        copy.deepcopy(schema)
-
-
 def process(csv_path, mapping_path, publisher_name, publish_date):
-    with open_file_path_or_url(mapping_path) as mapping_file:
-        content = mapping_file.read()
-        result = json.loads(content)
-
-    release_schema = result['releases'][0]
-    result['releases'] = []
-    result['publisher']['name'] = publisher_name
-    result['publishingMeta']['date'] = publish_date
-
-    with open_file_path_or_url(csv_path) as csv_file:
+    with open_file_path_or_url(mapping_path) as mapping_file, \
+         open_file_path_or_url(csv_path) as csv_file:
         reader = csv.DictReader(csv_file)
-        for row in reader:
-            release = traverse(release_schema, csv_row=row)
-            if 'releaseID' not in release['releaseMeta']:
-                release['releaseMeta']['releaseID'] = "{}-{}-{}".format(
-                    publisher_name, publish_date, str(uuid.uuid4()))
-            result['releases'].append(release)
-
-    return json.dumps(result, indent=4, ensure_ascii=False)
+        def list_formatter(value, **kwargs):
+            return map(lambda it: it.strip(), value.split(','))
+        template = jsontemplate.FromFile(
+            mapping_file,
+            more_formatters=dict(list=list_formatter)
+        )
+        csv_rows = list(reader)
+        for row in csv_rows:
+            row['releaseID'] = "{}-{}-{}".format(
+                publisher_name, publish_date, str(uuid.uuid4())
+            )
+        return template.expand(
+            name=publisher_name or "null",
+            date=publish_date or "null",
+            csv_rows=csv_rows
+        )
 
 
 def main():
