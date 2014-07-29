@@ -38,24 +38,46 @@ def process_csv(csv_file, publisher_name, publish_date):
     return csv_rows
 
 
-def render(csv_file, mapping_file, publisher_name, publish_date):
-    def list_formatter(value, **kwargs):
+def render(mapping_file, context):
+
+    def list_formatter(value):
         return map(lambda it: it.strip(), value.split(','))
+
+    def boolean_formatter(value):
+        if value in ['0', 'f', 'false', 'False', 'no', 'No']:
+            return 'false'
+        elif value in ['1', 't', 'true', 'True', 'yes', 'Yes']:
+            return 'true'
+
+    def integer_formatter(value):
+        return int(value)
+
+    def number_formatter(value):
+        return float(value)
+
     template = jsontemplate.FromFile(
         mapping_file,
-        more_formatters=dict(list=list_formatter)
+        more_formatters=dict(
+            list=list_formatter,
+            boolean=boolean_formatter,
+            integer=integer_formatter,
+            number=number_formatter
+        )
     )
-    return template.expand(
-        name=publisher_name or "null",
-        date=publish_date or "null",
-        csv_rows=process_csv(csv_file, publisher_name, publish_date)
-    )
+    return template.expand(context)
 
 
 def process(csv_path, mapping_path, publisher_name, publish_date):
-    with open_file_path_or_url(mapping_path) as mapping_file, \
-         open_file_path_or_url(csv_path) as csv_file:
-        return render(csv_file, mapping_file, publisher_name, publish_date)
+    context = dict(
+        name=publisher_name,
+        date=publish_date
+    )
+    with open_file_path_or_url(csv_path) as csv_file:
+        context['csv_rows'] = process_csv(
+            csv_file, publisher_name, publish_date
+        )
+    with open_file_path_or_url(mapping_path) as mapping_file:
+        return render(mapping_file, context)
 
 
 def main():
@@ -78,7 +100,8 @@ def main():
 
     result = process(
         options.csv_file, options.mapping_file,
-        options.publisher_name, options.publish_date)
+        options.publisher_name, options.publish_date
+    )
     print(result.encode('utf-8'))
 
 

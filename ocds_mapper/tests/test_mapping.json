@@ -11,9 +11,20 @@
                 "releaseMeta": {
                     "ocid": "{reference_number}",
                     "locale": "en_us",
-                    "releaseID": "{releaseID}"
+                    "releaseID": "{releaseID}",
+                    "formation": {
+                        "attachments": [
+                            {.repeated section document|list}
+                                {.meta-left}
+                                    "uri": "{@}",
+                                    "name": ""
+                                {.meta-right}{.alternates with},
+                            {.end}
+                        ]
+                    }
                 }
             {.meta-right}{.alternates with},
         {.end}
+        {.newline}
     ]
 }
