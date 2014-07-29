@@ -24,26 +24,38 @@ def open_file_path_or_url(file_path_or_url):
             yield f
 
 
+def add_release_ids(rows, publisher_name, publish_date):
+    for row in rows:
+        row['releaseID'] = "{}-{}-{}".format(
+            publisher_name, publish_date, str(uuid.uuid4())
+        )
+
+
+def process_csv(csv_file, publisher_name, publish_date):
+    reader = csv.DictReader(csv_file)
+    csv_rows = list(reader)
+    add_release_ids(csv_rows, publisher_name, publish_date)
+    return csv_rows
+
+
+def render(csv_file, mapping_file, publisher_name, publish_date):
+    def list_formatter(value, **kwargs):
+        return map(lambda it: it.strip(), value.split(','))
+    template = jsontemplate.FromFile(
+        mapping_file,
+        more_formatters=dict(list=list_formatter)
+    )
+    return template.expand(
+        name=publisher_name or "null",
+        date=publish_date or "null",
+        csv_rows=process_csv(csv_file, publisher_name, publish_date)
+    )
+
+
 def process(csv_path, mapping_path, publisher_name, publish_date):
     with open_file_path_or_url(mapping_path) as mapping_file, \
          open_file_path_or_url(csv_path) as csv_file:
-        reader = csv.DictReader(csv_file)
-        def list_formatter(value, **kwargs):
-            return map(lambda it: it.strip(), value.split(','))
-        template = jsontemplate.FromFile(
-            mapping_file,
-            more_formatters=dict(list=list_formatter)
-        )
-        csv_rows = list(reader)
-        for row in csv_rows:
-            row['releaseID'] = "{}-{}-{}".format(
-                publisher_name, publish_date, str(uuid.uuid4())
-            )
-        return template.expand(
-            name=publisher_name or "null",
-            date=publish_date or "null",
-            csv_rows=csv_rows
-        )
+        return render(csv_file, mapping_file, publisher_name, publish_date)
 
 
 def main():
